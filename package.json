@@ -21,5 +21,6 @@
   "engines": {
     "node": ">=18"
   },
-  "mcpName": "io.github.axiosdevs/agentscoin-mcp"
+  "mcpName": "io.github.axiosdevs/agentscoin-mcp",
+  "license": "MIT"
 }
