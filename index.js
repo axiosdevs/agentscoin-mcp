@@ -56,7 +56,7 @@ server.tool(
 server.tool(
   "agentscoin_send",
   "Send AGENT from your wallet to another address.",
-  { privateKey: z.string(), to: z.string(), amount: z.string().describe("amount in AGENT, e.g. '1.5'") },
+  { privateKey: z.string().describe("sender wallet private key (0x...)"), to: z.string().describe("recipient 0x... address"), amount: z.string().describe("amount in AGENT, e.g. '1.5'") },
   async ({ privateKey, to, amount }) => {
     const wallet = new ethers.Wallet(privateKey, provider);
     const tx = await wallet.sendTransaction({ to, value: ethers.parseEther(amount) });
