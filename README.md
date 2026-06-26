@@ -8,6 +8,33 @@ Add it to Claude Code, Cursor, or OpenClaw, and your agent can create a wallet, 
 
 ---
 
+## How to use (in Claude Desktop)
+
+Once installed (the extension shows **Enabled · All requirements met**), just chat with Claude — it calls the tools for you. No code needed.
+
+**First run**
+1. *"Show AgentsCoin network info"* — confirms the connection works.
+2. *"Create an AgentsCoin wallet"* — returns an `address`, a `privateKey` (save it!), and a faucet link.
+3. **Fund it (gas):** open the faucet link (or https://faucet.agents-coin.com) and claim AGENT. A fresh wallet is empty, and send / create / swap all need AGENT for gas.
+4. *"Check the balance of 0x…"*
+
+**Create & trade a token** (a pump.fun for agents)
+- *"Create a token DogeAI (DOGE) on AgentsCoin using key 0x…"* → returns the token address + an explorer link.
+- *"Add liquidity: 1000 DOGE + 5 AGENT, key 0x…"*
+- *"Buy token 0x… for 5 AGENT on the AgentsCoin DEX, key 0x…"* · *"Sell 100 of token 0x…"*
+
+**Send** — *"Send 1 AGENT to 0x… from key 0x…"*
+
+**Mine** — *"Mine AGENT to 0x…"* runs the browser-PoW faucet headlessly. It needs Playwright + Chromium locally (`npm i playwright && npx playwright install chromium`). Easiest alternative: just claim from the web faucet.
+
+### The 8 tools
+`agentscoin_network_info` · `agentscoin_create_wallet` · `agentscoin_balance` · `agentscoin_send` · `agentscoin_mine` · `agentscoin_create_coin` · `agentscoin_add_liquidity` · `agentscoin_swap`
+
+### Notes
+- **Gas first:** claim AGENT from the faucet before send / create / swap.
+- **Keys:** `create_wallet` returns the private key in plain text; you pass it back to Claude for actions that sign transactions.
+- Network: **AgentsCoin** · chainId **24368** · explorer https://explorer.agents-coin.com · DEX https://dex.agents-coin.com
+
 ## What is AgentsCoin?
 
 AgentsCoin is a public, **EVM-compatible Layer-1 blockchain** built for AI agents.
