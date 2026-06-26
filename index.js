@@ -4,6 +4,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ethers } from "ethers";
 import { z } from "zod";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 
 const RPC = process.env.AGENTSCOIN_RPC || "https://rpc.agents-coin.com";
 const FAUCET = process.env.AGENTSCOIN_FAUCET || "https://faucet.agents-coin.com";
@@ -96,5 +99,50 @@ server.tool(
     } finally { await browser.close(); }
   }
 );
+
+
+// ---- DEX tools: create coin, add liquidity, swap ----
+const MEME = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "memecoin.json"), "utf8"));
+const DEX = { router: "0x955cFAB7B0943e3bE3f8c51f4569581f66c4170e", factory: "0x4Cd52B1E022Ef78B66862502cA4c000a15Adc06C", wagent: "0xF28A7ee0A7692D12C61210bA7477ff29e12d5BD8" };
+const ROUTER_ABI = [
+  "function addLiquidityETH(address token,uint amountTokenDesired,uint amountTokenMin,uint amountETHMin,address to,uint deadline) payable returns (uint,uint,uint)",
+  "function swapExactETHForTokens(uint amountOutMin,address[] path,address to,uint deadline) payable returns (uint[])",
+  "function swapExactTokensForETH(uint amountIn,uint amountOutMin,address[] path,address to,uint deadline) returns (uint[])",
+];
+const ERC20_ABI = ["function approve(address,uint) returns (bool)", "function balanceOf(address) view returns (uint)"];
+const dl = () => Math.floor(Date.now()/1000) + 1200;
+
+server.tool("agentscoin_create_coin", "Deploy a new memecoin (ERC-20) on AgentsCoin. Returns the token address.",
+  { privateKey: z.string().describe("deployer wallet private key (0x...)"), name: z.string().describe("token name"), symbol: z.string().describe("token symbol"), supply: z.string().describe("total supply, e.g. '1000000000'") },
+  async ({ privateKey, name, symbol, supply }) => {
+    const w = new ethers.Wallet(privateKey, provider);
+    const cf = new ethers.ContractFactory(MEME.abi, MEME.bytecode, w);
+    const tok = await cf.deploy(name, symbol, supply); await tok.waitForDeployment();
+    const addr = await tok.getAddress();
+    return out({ token: addr, name, symbol, supply, explorer: `${EXPLORER}/token/${addr}`, next: "Use agentscoin_add_liquidity to make it tradeable." });
+  });
+
+server.tool("agentscoin_add_liquidity", "Create or add an AGENT liquidity pool for a token on the AgentsCoin DEX.",
+  { privateKey: z.string().describe("wallet private key"), token: z.string().describe("token 0x... address"), tokenAmount: z.string().describe("amount of the token to add"), agentAmount: z.string().describe("amount of AGENT to pair") },
+  async ({ privateKey, token, tokenAmount, agentAmount }) => {
+    const w = new ethers.Wallet(privateKey, provider);
+    await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait();
+    const tx = await new ethers.Contract(DEX.router, ROUTER_ABI, w).addLiquidityETH(token, ethers.parseEther(tokenAmount), 0, 0, w.address, dl(), { value: ethers.parseEther(agentAmount) });
+    await tx.wait();
+    return out({ status: "liquidity added", token, tokenAmount, agentAmount, tx: tx.hash, dex: "https://dex.agents-coin.com" });
+  });
+
+server.tool("agentscoin_swap", "Buy or sell a token for AGENT on the AgentsCoin DEX.",
+  { privateKey: z.string().describe("wallet private key"), action: z.enum(["buy", "sell"]).describe("buy = spend AGENT for token; sell = sell token for AGENT"), token: z.string().describe("token 0x... address"), amount: z.string().describe("AGENT to spend (buy) or token amount to sell (sell)") },
+  async ({ privateKey, action, token, amount }) => {
+    const w = new ethers.Wallet(privateKey, provider);
+    const r = new ethers.Contract(DEX.router, ROUTER_ABI, w);
+    let tx;
+    if (action === "buy") tx = await r.swapExactETHForTokens(0, [DEX.wagent, token], w.address, dl(), { value: ethers.parseEther(amount) });
+    else { await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait(); tx = await r.swapExactTokensForETH(ethers.parseEther(amount), 0, [token, DEX.wagent], w.address, dl()); }
+    await tx.wait();
+    return out({ status: "swapped", action, token, amount, tx: tx.hash, explorer: `${EXPLORER}/tx/${tx.hash}` });
+  });
+
 
 await server.connect(new StdioServerTransport());

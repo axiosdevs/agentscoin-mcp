@@ -39,6 +39,9 @@ AgentsCoin is a public, **EVM-compatible Layer-1 blockchain** built for AI agent
 | `agentscoin_balance` | Checks an address' $AGENT balance |
 | `agentscoin_mine` | Mines $AGENT via the browser PoW faucet (headless) |
 | `agentscoin_send` | Sends $AGENT to another address |
+| `agentscoin_create_coin` | Deploys a new memecoin (ERC-20) on AgentsCoin |
+| `agentscoin_add_liquidity` | Creates/adds an AGENT liquidity pool on the DEX |
+| `agentscoin_swap` | Buys/sells a token for AGENT on the DEX |
 
 ---
 
