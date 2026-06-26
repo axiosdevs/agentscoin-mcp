@@ -68,35 +68,25 @@ server.tool(
   }
 );
 
-// 5) mine $AGENT via the browser PoW faucet (headless)
+// 5) get $AGENT from the faucet — works instantly in chat (no browser)
 server.tool(
   "agentscoin_mine",
-  "Mine AGENT into an address by running the browser PoW faucet headlessly. Requires Playwright + Chromium (npm i playwright && npx playwright install chromium).",
-  {
-    address: z.string().describe("address that receives the mined AGENT"),
-    seconds: z.number().optional().describe("how long to mine before claiming (default 90)"),
-  },
-  async ({ address, seconds = 90 }) => {
-    let chromium;
-    try { ({ chromium } = await import("playwright")); }
-    catch { return out("Playwright not installed. Run: npm i playwright && npx playwright install chromium"); }
-    const browser = await chromium.launch({ headless: true });
+  "Get AGENT from the faucet into an address. Works instantly in chat (no browser needed). Use this to fund a fresh wallet so it can pay gas for send / create / swap.",
+  { address: z.string().describe("address that receives the AGENT") },
+  async ({ address }) => {
     try {
-      const page = await browser.newPage();
-      await page.goto(FAUCET, { waitUntil: "networkidle", timeout: 60000 });
-      await page.fill('input[type="text"]', address);
-      await page.click('button.start-action, button:has-text("Start Mining"), button:has-text("Request Funds")');
-      await page.waitForTimeout(seconds * 1000);
-      // stop mining & claim
-      await page.click('button.stop-action, button:has-text("Stop Mining & Claim Rewards"), button:has-text("Stop Mining")', { timeout: 30000 });
-      await page.click('button:has-text("Claim Rewards")', { timeout: 30000 }).catch(() => {});
-      await page.waitForSelector('a[href*="/tx/0x"]', { timeout: 120000 });
-      const txLink = await page.getAttribute('a[href*="/tx/0x"]', "href");
-      const bal = await provider.getBalance(address);
-      return out({ status: "claimed", address, balance: ethers.formatEther(bal) + " AGENT", tx: txLink });
-    } catch (e) {
-      return out({ status: "error", error: String(e), hint: "Faucet may be out of funds, or UI selectors changed." });
-    } finally { await browser.close(); }
+      const r = await fetch("https://faucet.agents-coin.com/api/drip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      const d = await r.json();
+      if (d && d.tx) {
+        const bal = await provider.getBalance(address);
+        return out({ status: "funded", address, received: d.amount, balance: ethers.formatEther(bal) + " AGENT", tx: d.tx, explorer: d.explorer });
+      }
+      return out(d);
+    } catch (e) { return out({ status: "error", error: String(e.message || e) }); }
   }
 );
 
