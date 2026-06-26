@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// AgentsCoin MCP — lets an AI agent join AgentsCoin, mine $AGENT and use it.
+// AgentsCoin MCP — lets an AI agent join AgentsCoin, get $AGENT and use it.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ethers } from "ethers";
 import { z } from "zod";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { homedir } from "os";
 
 const RPC = process.env.AGENTSCOIN_RPC || "https://rpc.agents-coin.com";
 const FAUCET = process.env.AGENTSCOIN_FAUCET || "https://faucet.agents-coin.com";
@@ -16,82 +17,72 @@ const CHAIN_ID = 24368;
 const provider = new ethers.JsonRpcProvider(RPC);
 const out = (o) => ({ content: [{ type: "text", text: typeof o === "string" ? o : JSON.stringify(o, null, 2) }] });
 
-const server = new McpServer({ name: "agentscoin", version: "1.0.0" });
+// --- local wallet store: keys are saved on disk and NEVER shown in chat unless explicitly revealed ---
+const WDIR = join(homedir(), ".agentscoin");
+const WFILE = join(WDIR, "wallets.json");
+function loadStore() { try { return JSON.parse(readFileSync(WFILE, "utf8")); } catch { return { active: null, wallets: {} }; } }
+function saveStore(s) { try { mkdirSync(WDIR, { recursive: true }); writeFileSync(WFILE, JSON.stringify(s, null, 2)); } catch (e) {} }
+function resolveKey(privateKey) {
+  if (privateKey) return privateKey;
+  const s = loadStore(); const w = s.active && s.wallets[s.active];
+  if (!w) throw new Error("No saved wallet yet. Create one with agentscoin_create_wallet, or pass privateKey.");
+  return w.privateKey;
+}
+function activeAddress() { return loadStore().active; }
 
-// 1) network info (for adding to a wallet)
-server.tool(
-  "agentscoin_network_info",
+const server = new McpServer({ name: "agentscoin", version: "1.2.0" });
+
+server.tool("agentscoin_network_info",
   "Get AgentsCoin network parameters (chainId, RPC, symbol, explorer). Use to add the network to MetaMask or any EVM wallet.",
-  {},
-  async () => out({
-    network: "AgentsCoin", chainId: CHAIN_ID, chainIdHex: "0x5f30",
-    rpcUrl: RPC, currencySymbol: "AGENT", decimals: 18,
-    blockExplorerUrl: EXPLORER, faucet: FAUCET,
-  })
-);
+  {}, async () => out({ network: "AgentsCoin", chainId: CHAIN_ID, chainIdHex: "0x5f30", rpcUrl: RPC, currencySymbol: "AGENT", decimals: 18, blockExplorerUrl: EXPLORER, faucet: FAUCET }));
 
-// 2) create a wallet
-server.tool(
-  "agentscoin_create_wallet",
-  "Create a new AgentsCoin (EVM) wallet for this agent. Returns address, private key and mnemonic. Store the private key securely.",
-  {},
-  async () => {
+// create a wallet — saves the key locally, shows ONLY the address
+server.tool("agentscoin_create_wallet",
+  "Create a new AgentsCoin wallet for the agent. IMPORTANT: the private key is saved locally and kept hidden — do NOT display it to the user. Show ONLY the address. The key is used automatically for send/create/swap. Reveal it only via agentscoin_reveal_private_key, and only when the user explicitly asks to back it up.",
+  {}, async () => {
     const w = ethers.Wallet.createRandom();
-    return out({
-      address: w.address, privateKey: w.privateKey, mnemonic: w.mnemonic?.phrase,
-      next: "Use agentscoin_mine with this address to earn AGENT.",
-    });
-  }
-);
+    const s = loadStore(); s.wallets[w.address] = { privateKey: w.privateKey, mnemonic: w.mnemonic?.phrase }; s.active = w.address; saveStore(s);
+    return out({ address: w.address, keySaved: true, note: "Private key saved locally and kept hidden — do not display it. It is used automatically. Fund this address with agentscoin_mine." });
+  });
 
-// 3) check balance
-server.tool(
-  "agentscoin_balance",
-  "Check the AGENT balance of an address.",
-  { address: z.string().describe("0x... address") },
+// reveal — only when the user explicitly asks
+server.tool("agentscoin_reveal_private_key",
+  "Reveal and back up the saved private key + mnemonic. ONLY call this when the user EXPLICITLY asks to see / export / back up their key. Then warn them to keep it secret and never paste it in a shared chat.",
+  { address: z.string().optional().describe("which wallet; defaults to the active wallet") },
   async ({ address }) => {
-    const bal = await provider.getBalance(address);
-    return out({ address, balance: ethers.formatEther(bal) + " AGENT", wei: bal.toString() });
-  }
-);
+    const s = loadStore(); const a = address || s.active; const w = a && s.wallets[a];
+    if (!w) return out({ error: "No saved wallet found. Create one with agentscoin_create_wallet." });
+    return out({ address: a, privateKey: w.privateKey, mnemonic: w.mnemonic, warning: "Keep this secret. Anyone with this key controls the funds. Never paste it into a shared chat or screenshot." });
+  });
 
-// 4) send AGENT
-server.tool(
-  "agentscoin_send",
-  "Send AGENT from your wallet to another address.",
-  { privateKey: z.string().describe("sender wallet private key (0x...)"), to: z.string().describe("recipient 0x... address"), amount: z.string().describe("amount in AGENT, e.g. '1.5'") },
-  async ({ privateKey, to, amount }) => {
-    const wallet = new ethers.Wallet(privateKey, provider);
-    const tx = await wallet.sendTransaction({ to, value: ethers.parseEther(amount) });
-    const rcpt = await tx.wait();
+server.tool("agentscoin_balance", "Check the AGENT balance of an address (defaults to your saved wallet).",
+  { address: z.string().optional().describe("0x... address; omit to use your wallet") },
+  async ({ address }) => {
+    const a = address || activeAddress(); if (!a) return out({ error: "No address and no saved wallet." });
+    const bal = await provider.getBalance(a); return out({ address: a, balance: ethers.formatEther(bal) + " AGENT", wei: bal.toString() });
+  });
+
+server.tool("agentscoin_send", "Send AGENT from your wallet to another address.",
+  { to: z.string().describe("recipient 0x... address"), amount: z.string().describe("amount in AGENT, e.g. '1.5'"), privateKey: z.string().optional().describe("sender key; omit to use your saved wallet") },
+  async ({ to, amount, privateKey }) => {
+    const wallet = new ethers.Wallet(resolveKey(privateKey), provider);
+    const tx = await wallet.sendTransaction({ to, value: ethers.parseEther(amount) }); const rcpt = await tx.wait();
     return out({ hash: tx.hash, status: rcpt.status === 1 ? "success" : "failed", explorer: `${EXPLORER}/tx/${tx.hash}` });
-  }
-);
+  });
 
-// 5) get $AGENT from the faucet — works instantly in chat (no browser)
-server.tool(
-  "agentscoin_mine",
-  "Get AGENT from the faucet into an address. Works instantly in chat (no browser needed). Use this to fund a fresh wallet so it can pay gas for send / create / swap.",
-  { address: z.string().describe("address that receives the AGENT") },
+server.tool("agentscoin_mine", "Get AGENT from the faucet (defaults to your saved wallet). Works instantly in chat, no browser. Use to fund a fresh wallet for gas.",
+  { address: z.string().optional().describe("address to receive AGENT; omit to use your wallet") },
   async ({ address }) => {
+    const a = address || activeAddress(); if (!a) return out({ error: "No address and no saved wallet. Create one first." });
     try {
-      const r = await fetch("https://faucet.agents-coin.com/api/drip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
-      });
+      const r = await fetch(FAUCET + "/api/drip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: a }) });
       const d = await r.json();
-      if (d && d.tx) {
-        const bal = await provider.getBalance(address);
-        return out({ status: "funded", address, received: d.amount, balance: ethers.formatEther(bal) + " AGENT", tx: d.tx, explorer: d.explorer });
-      }
+      if (d && d.tx) { const bal = await provider.getBalance(a); return out({ status: "funded", address: a, received: d.amount, balance: ethers.formatEther(bal) + " AGENT", tx: d.tx, explorer: d.explorer }); }
       return out(d);
     } catch (e) { return out({ status: "error", error: String(e.message || e) }); }
-  }
-);
+  });
 
-
-// ---- DEX tools: create coin, add liquidity, swap ----
+// ---- DEX tools ----
 const MEME = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "token.json"), "utf8"));
 const DEX = { router: "0x955cFAB7B0943e3bE3f8c51f4569581f66c4170e", factory: "0x4Cd52B1E022Ef78B66862502cA4c000a15Adc06C", wagent: "0xF28A7ee0A7692D12C61210bA7477ff29e12d5BD8" };
 const ROUTER_ABI = [
@@ -103,36 +94,33 @@ const ERC20_ABI = ["function approve(address,uint) returns (bool)", "function ba
 const dl = () => Math.floor(Date.now()/1000) + 1200;
 
 server.tool("agentscoin_create_coin", "Deploy a new token (ERC-20) on AgentsCoin. Returns the token address.",
-  { privateKey: z.string().describe("deployer wallet private key (0x...)"), name: z.string().describe("token name"), symbol: z.string().describe("token symbol"), supply: z.string().describe("total supply, e.g. '1000000000'") },
-  async ({ privateKey, name, symbol, supply }) => {
-    const w = new ethers.Wallet(privateKey, provider);
+  { name: z.string().describe("token name"), symbol: z.string().describe("token symbol"), supply: z.string().optional().describe("total supply, default 1000000000"), privateKey: z.string().optional().describe("deployer key; omit to use your saved wallet") },
+  async ({ name, symbol, supply = "1000000000", privateKey }) => {
+    const w = new ethers.Wallet(resolveKey(privateKey), provider);
     const cf = new ethers.ContractFactory(MEME.abi, MEME.bytecode, w);
-    const tok = await cf.deploy(name, symbol, supply); await tok.waitForDeployment();
-    const addr = await tok.getAddress();
+    const tok = await cf.deploy(name, symbol, supply); await tok.waitForDeployment(); const addr = await tok.getAddress();
     return out({ token: addr, name, symbol, supply, explorer: `${EXPLORER}/token/${addr}`, next: "Use agentscoin_add_liquidity to make it tradeable." });
   });
 
 server.tool("agentscoin_add_liquidity", "Create or add an AGENT liquidity pool for a token on the AgentsCoin DEX.",
-  { privateKey: z.string().describe("wallet private key"), token: z.string().describe("token 0x... address"), tokenAmount: z.string().describe("amount of the token to add"), agentAmount: z.string().describe("amount of AGENT to pair") },
-  async ({ privateKey, token, tokenAmount, agentAmount }) => {
-    const w = new ethers.Wallet(privateKey, provider);
+  { token: z.string().describe("token 0x... address"), tokenAmount: z.string().describe("amount of the token to add"), agentAmount: z.string().describe("amount of AGENT to pair"), privateKey: z.string().optional().describe("wallet key; omit to use your saved wallet") },
+  async ({ token, tokenAmount, agentAmount, privateKey }) => {
+    const w = new ethers.Wallet(resolveKey(privateKey), provider);
     await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait();
-    const tx = await new ethers.Contract(DEX.router, ROUTER_ABI, w).addLiquidityETH(token, ethers.parseEther(tokenAmount), 0, 0, w.address, dl(), { value: ethers.parseEther(agentAmount) });
+    const tx = await new ethers.Contract(DEX.router, ROUTER_ABI, w).addLiquidityETH(token, ethers.parseEther(tokenAmount), 0, 0, w.address, dl(), { value: ethers.parseEther(agentAmount), gasLimit: 400000 });
     await tx.wait();
     return out({ status: "liquidity added", token, tokenAmount, agentAmount, tx: tx.hash, dex: "https://dex.agents-coin.com" });
   });
 
 server.tool("agentscoin_swap", "Buy or sell a token for AGENT on the AgentsCoin DEX.",
-  { privateKey: z.string().describe("wallet private key"), action: z.enum(["buy", "sell"]).describe("buy = spend AGENT for token; sell = sell token for AGENT"), token: z.string().describe("token 0x... address"), amount: z.string().describe("AGENT to spend (buy) or token amount to sell (sell)") },
-  async ({ privateKey, action, token, amount }) => {
-    const w = new ethers.Wallet(privateKey, provider);
-    const r = new ethers.Contract(DEX.router, ROUTER_ABI, w);
-    let tx;
-    if (action === "buy") tx = await r.swapExactETHForTokens(0, [DEX.wagent, token], w.address, dl(), { value: ethers.parseEther(amount) });
-    else { await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait(); tx = await r.swapExactTokensForETH(ethers.parseEther(amount), 0, [token, DEX.wagent], w.address, dl()); }
+  { action: z.enum(["buy", "sell"]).describe("buy = spend AGENT for token; sell = sell token for AGENT"), token: z.string().describe("token 0x... address"), amount: z.string().describe("AGENT to spend (buy) or token amount to sell (sell)"), privateKey: z.string().optional().describe("wallet key; omit to use your saved wallet") },
+  async ({ action, token, amount, privateKey }) => {
+    const w = new ethers.Wallet(resolveKey(privateKey), provider);
+    const r = new ethers.Contract(DEX.router, ROUTER_ABI, w); let tx;
+    if (action === "buy") tx = await r.swapExactETHForTokens(0, [DEX.wagent, token], w.address, dl(), { value: ethers.parseEther(amount), gasLimit: 300000 });
+    else { await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait(); tx = await r.swapExactTokensForETH(ethers.parseEther(amount), 0, [token, DEX.wagent], w.address, dl(), { gasLimit: 300000 }); }
     await tx.wait();
     return out({ status: "swapped", action, token, amount, tx: tx.hash, explorer: `${EXPLORER}/tx/${tx.hash}` });
   });
-
 
 await server.connect(new StdioServerTransport());
