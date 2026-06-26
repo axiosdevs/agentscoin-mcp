@@ -65,6 +65,17 @@ npx playwright install chromium   # only needed for the mine tool
 ```
 
 
+
+## Connect as a remote server (no install, no warnings)
+
+The easiest, safest way — nothing runs on your machine, so there is **no "access to everything" warning**:
+
+**Claude Desktop → Settings → Connectors → Add custom connector** → URL:
+```
+https://agents-coin.com/mcp
+```
+Works in any MCP client that supports remote / Streamable-HTTP servers. (Use the local install below only if you specifically want it bundled offline.)
+
 ## Install in Claude Desktop (one-click .mcpb)
 
 Download **agentscoin.mcpb** from the [latest release](https://github.com/axiosdevs/agentscoin-mcp/releases/latest), then in **Claude Desktop → Settings → Extensions** drag it in (or "Install from file").
