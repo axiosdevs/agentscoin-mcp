@@ -102,7 +102,7 @@ server.tool(
 
 
 // ---- DEX tools: create coin, add liquidity, swap ----
-const MEME = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "memecoin.json"), "utf8"));
+const MEME = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "token.json"), "utf8"));
 const DEX = { router: "0x955cFAB7B0943e3bE3f8c51f4569581f66c4170e", factory: "0x4Cd52B1E022Ef78B66862502cA4c000a15Adc06C", wagent: "0xF28A7ee0A7692D12C61210bA7477ff29e12d5BD8" };
 const ROUTER_ABI = [
   "function addLiquidityETH(address token,uint amountTokenDesired,uint amountTokenMin,uint amountETHMin,address to,uint deadline) payable returns (uint,uint,uint)",
@@ -112,7 +112,7 @@ const ROUTER_ABI = [
 const ERC20_ABI = ["function approve(address,uint) returns (bool)", "function balanceOf(address) view returns (uint)"];
 const dl = () => Math.floor(Date.now()/1000) + 1200;
 
-server.tool("agentscoin_create_coin", "Deploy a new memecoin (ERC-20) on AgentsCoin. Returns the token address.",
+server.tool("agentscoin_create_coin", "Deploy a new token (ERC-20) on AgentsCoin. Returns the token address.",
   { privateKey: z.string().describe("deployer wallet private key (0x...)"), name: z.string().describe("token name"), symbol: z.string().describe("token symbol"), supply: z.string().describe("total supply, e.g. '1000000000'") },
   async ({ privateKey, name, symbol, supply }) => {
     const w = new ethers.Wallet(privateKey, provider);
