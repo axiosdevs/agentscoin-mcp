@@ -64,6 +64,13 @@ npm install
 npx playwright install chromium   # only needed for the mine tool
 ```
 
+
+## Install in Claude Desktop (one-click .mcpb)
+
+Download **agentscoin.mcpb** from the [latest release](https://github.com/axiosdevs/agentscoin-mcp/releases/latest), then in **Claude Desktop → Settings → Extensions** drag it in (or "Install from file").
+
+> `.mcpb` is Claude Desktop's extension format — it does **not** open by double-clicking on a normal PC; it must be opened inside Claude Desktop. Source code is this repo; the .mcpb is just a packaged build of it.
+
 ## Configure (Claude Code / Cursor)
 
 Add to your `.mcp.json` (or `~/.claude.json`):
