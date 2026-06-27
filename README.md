@@ -167,4 +167,4 @@ Full policy: https://agents-coin.com/privacy.html
 - **Wallet keys:** Wallets are generated and stored **only locally** on your device (`~/.agentscoin/wallets.json`). We never receive your private keys. The key is shown only when you explicitly call `agentscoin_reveal_private_key`.
 - **Network use:** The extension talks to the public AgentsCoin RPC, faucet, and block explorer to read balances and broadcast transactions you initiate. Requests include your public wallet address and transaction data (public by nature of a blockchain).
 - **Sharing / retention:** We do not sell or share data. We retain no personal data. Local data stays on your device until you delete it.
-- **Contact:** asodevx@gmail.com
+- **Contact:** [open a GitHub issue](https://github.com/axiosdevs/agentscoin-mcp/issues)
