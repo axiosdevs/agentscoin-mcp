@@ -17,7 +17,6 @@ const CHAIN_ID = 24368;
 const provider = new ethers.JsonRpcProvider(RPC);
 const out = (o) => ({ content: [{ type: "text", text: typeof o === "string" ? o : JSON.stringify(o, null, 2) }] });
 
-// --- local wallet store: keys are saved on disk and NEVER shown in chat unless explicitly revealed ---
 const WDIR = join(homedir(), ".agentscoin");
 const WFILE = join(WDIR, "wallets.json");
 function loadStore() { try { return JSON.parse(readFileSync(WFILE, "utf8")); } catch { return { active: null, wallets: {} }; } }
@@ -30,25 +29,26 @@ function resolveKey(privateKey) {
 }
 function activeAddress() { return loadStore().active; }
 
-const server = new McpServer({ name: "agentscoin", version: "1.2.0" });
+const server = new McpServer({ name: "agentscoin", version: "1.2.1" });
 
 server.tool("agentscoin_network_info",
   "Get AgentsCoin network parameters (chainId, RPC, symbol, explorer). Use to add the network to MetaMask or any EVM wallet.",
-  {}, async () => out({ network: "AgentsCoin", chainId: CHAIN_ID, chainIdHex: "0x5f30", rpcUrl: RPC, currencySymbol: "AGENT", decimals: 18, blockExplorerUrl: EXPLORER, faucet: FAUCET }));
+  {}, { title: "Network Info", readOnlyHint: true, openWorldHint: true },
+  async () => out({ network: "AgentsCoin", chainId: CHAIN_ID, chainIdHex: "0x5f30", rpcUrl: RPC, currencySymbol: "AGENT", decimals: 18, blockExplorerUrl: EXPLORER, faucet: FAUCET }));
 
-// create a wallet — saves the key locally, shows ONLY the address
 server.tool("agentscoin_create_wallet",
-  "Create a new AgentsCoin wallet for the agent. IMPORTANT: the private key is saved locally and kept hidden — do NOT display it to the user. Show ONLY the address. The key is used automatically for send/create/swap. Reveal it only via agentscoin_reveal_private_key, and only when the user explicitly asks to back it up.",
-  {}, async () => {
+  "Create a new AgentsCoin wallet for the agent. IMPORTANT: the private key is saved locally and kept hidden — do NOT display it. Show ONLY the address. The key is used automatically for send/create/swap. Reveal it only via agentscoin_reveal_private_key when the user explicitly asks.",
+  {}, { title: "Create Wallet", readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  async () => {
     const w = ethers.Wallet.createRandom();
     const s = loadStore(); s.wallets[w.address] = { privateKey: w.privateKey, mnemonic: w.mnemonic?.phrase }; s.active = w.address; saveStore(s);
-    return out({ address: w.address, keySaved: true, note: "Private key saved locally and kept hidden — do not display it. It is used automatically. Fund this address with agentscoin_mine." });
+    return out({ address: w.address, keySaved: true, note: "Private key saved locally and kept hidden — do not display it. Fund this address with agentscoin_mine." });
   });
 
-// reveal — only when the user explicitly asks
 server.tool("agentscoin_reveal_private_key",
-  "Reveal and back up the saved private key + mnemonic. ONLY call this when the user EXPLICITLY asks to see / export / back up their key. Then warn them to keep it secret and never paste it in a shared chat.",
+  "Reveal and back up the saved private key + mnemonic. ONLY call this when the user EXPLICITLY asks to see / export / back up their key. Then warn them to keep it secret.",
   { address: z.string().optional().describe("which wallet; defaults to the active wallet") },
+  { title: "Reveal Private Key (backup)", readOnlyHint: true, openWorldHint: false },
   async ({ address }) => {
     const s = loadStore(); const a = address || s.active; const w = a && s.wallets[a];
     if (!w) return out({ error: "No saved wallet found. Create one with agentscoin_create_wallet." });
@@ -57,6 +57,7 @@ server.tool("agentscoin_reveal_private_key",
 
 server.tool("agentscoin_balance", "Check the AGENT balance of an address (defaults to your saved wallet).",
   { address: z.string().optional().describe("0x... address; omit to use your wallet") },
+  { title: "Check Balance", readOnlyHint: true, openWorldHint: true },
   async ({ address }) => {
     const a = address || activeAddress(); if (!a) return out({ error: "No address and no saved wallet." });
     const bal = await provider.getBalance(a); return out({ address: a, balance: ethers.formatEther(bal) + " AGENT", wei: bal.toString() });
@@ -64,6 +65,7 @@ server.tool("agentscoin_balance", "Check the AGENT balance of an address (defaul
 
 server.tool("agentscoin_send", "Send AGENT from your wallet to another address.",
   { to: z.string().describe("recipient 0x... address"), amount: z.string().describe("amount in AGENT, e.g. '1.5'"), privateKey: z.string().optional().describe("sender key; omit to use your saved wallet") },
+  { title: "Send AGENT", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   async ({ to, amount, privateKey }) => {
     const wallet = new ethers.Wallet(resolveKey(privateKey), provider);
     const tx = await wallet.sendTransaction({ to, value: ethers.parseEther(amount) }); const rcpt = await tx.wait();
@@ -72,6 +74,7 @@ server.tool("agentscoin_send", "Send AGENT from your wallet to another address."
 
 server.tool("agentscoin_mine", "Get AGENT from the faucet (defaults to your saved wallet). Works instantly in chat, no browser. Use to fund a fresh wallet for gas.",
   { address: z.string().optional().describe("address to receive AGENT; omit to use your wallet") },
+  { title: "Get AGENT (Faucet)", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   async ({ address }) => {
     const a = address || activeAddress(); if (!a) return out({ error: "No address and no saved wallet. Create one first." });
     try {
@@ -82,7 +85,6 @@ server.tool("agentscoin_mine", "Get AGENT from the faucet (defaults to your save
     } catch (e) { return out({ status: "error", error: String(e.message || e) }); }
   });
 
-// ---- DEX tools ----
 const MEME = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "token.json"), "utf8"));
 const DEX = { router: "0x955cFAB7B0943e3bE3f8c51f4569581f66c4170e", factory: "0x4Cd52B1E022Ef78B66862502cA4c000a15Adc06C", wagent: "0xF28A7ee0A7692D12C61210bA7477ff29e12d5BD8" };
 const ROUTER_ABI = [
@@ -95,6 +97,7 @@ const dl = () => Math.floor(Date.now()/1000) + 1200;
 
 server.tool("agentscoin_create_coin", "Deploy a new token (ERC-20) on AgentsCoin. Returns the token address.",
   { name: z.string().describe("token name"), symbol: z.string().describe("token symbol"), supply: z.string().optional().describe("total supply, default 1000000000"), privateKey: z.string().optional().describe("deployer key; omit to use your saved wallet") },
+  { title: "Create Token", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   async ({ name, symbol, supply = "1000000000", privateKey }) => {
     const w = new ethers.Wallet(resolveKey(privateKey), provider);
     const cf = new ethers.ContractFactory(MEME.abi, MEME.bytecode, w);
@@ -104,6 +107,7 @@ server.tool("agentscoin_create_coin", "Deploy a new token (ERC-20) on AgentsCoin
 
 server.tool("agentscoin_add_liquidity", "Create or add an AGENT liquidity pool for a token on the AgentsCoin DEX.",
   { token: z.string().describe("token 0x... address"), tokenAmount: z.string().describe("amount of the token to add"), agentAmount: z.string().describe("amount of AGENT to pair"), privateKey: z.string().optional().describe("wallet key; omit to use your saved wallet") },
+  { title: "Add Liquidity", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   async ({ token, tokenAmount, agentAmount, privateKey }) => {
     const w = new ethers.Wallet(resolveKey(privateKey), provider);
     await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait();
@@ -114,6 +118,7 @@ server.tool("agentscoin_add_liquidity", "Create or add an AGENT liquidity pool f
 
 server.tool("agentscoin_swap", "Buy or sell a token for AGENT on the AgentsCoin DEX.",
   { action: z.enum(["buy", "sell"]).describe("buy = spend AGENT for token; sell = sell token for AGENT"), token: z.string().describe("token 0x... address"), amount: z.string().describe("AGENT to spend (buy) or token amount to sell (sell)"), privateKey: z.string().optional().describe("wallet key; omit to use your saved wallet") },
+  { title: "Swap Token", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   async ({ action, token, amount, privateKey }) => {
     const w = new ethers.Wallet(resolveKey(privateKey), provider);
     const r = new ethers.Contract(DEX.router, ROUTER_ABI, w); let tx;
