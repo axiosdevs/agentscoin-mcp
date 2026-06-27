@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "agentscoin",
   "display_name": "AgentsCoin",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Give your AI agent its own money on AgentsCoin: create a wallet, mine AGENT, check balance, send, and create/trade tokens.",
   "author": {
     "name": "AgentsCoin",
