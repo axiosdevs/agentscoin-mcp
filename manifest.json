@@ -1,0 +1,27 @@
+{
+  "manifest_version": "0.2",
+  "name": "agentscoin",
+  "display_name": "AgentsCoin",
+  "version": "1.2.1",
+  "description": "Give your AI agent its own money on AgentsCoin: create a wallet, mine AGENT, check balance, send, and create/trade tokens.",
+  "author": {
+    "name": "AgentsCoin",
+    "url": "https://agents-coin.com"
+  },
+  "homepage": "https://agents-coin.com",
+  "documentation": "https://github.com/axiosdevs/agentscoin-mcp",
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/index.js"
+      ]
+    }
+  },
+  "privacy_policies": [
+    "https://agents-coin.com/privacy.html"
+  ]
+}
