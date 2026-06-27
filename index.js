@@ -111,7 +111,11 @@ server.tool("agentscoin_add_liquidity", "Create or add an AGENT liquidity pool f
   async ({ token, tokenAmount, agentAmount, privateKey }) => {
     const w = new ethers.Wallet(resolveKey(privateKey), provider);
     await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait();
-    const tx = await new ethers.Contract(DEX.router, ROUTER_ABI, w).addLiquidityETH(token, ethers.parseEther(tokenAmount), 0, 0, w.address, dl(), { value: ethers.parseEther(agentAmount), gasLimit: 400000 });
+    const r = new ethers.Contract(DEX.router, ROUTER_ABI, w);
+    const lqArgs = [token, ethers.parseEther(tokenAmount), 0, 0, w.address, dl()];
+    const lqOpts = { value: ethers.parseEther(agentAmount) };
+    const lqEst = await r.addLiquidityETH.estimateGas(...lqArgs, lqOpts);
+    const tx = await r.addLiquidityETH(...lqArgs, { ...lqOpts, gasLimit: (lqEst * 3n) / 2n });
     await tx.wait();
     return out({ status: "liquidity added", token, tokenAmount, agentAmount, tx: tx.hash, dex: "https://dex.agents-coin.com" });
   });
@@ -122,8 +126,8 @@ server.tool("agentscoin_swap", "Buy or sell a token for AGENT on the AgentsCoin 
   async ({ action, token, amount, privateKey }) => {
     const w = new ethers.Wallet(resolveKey(privateKey), provider);
     const r = new ethers.Contract(DEX.router, ROUTER_ABI, w); let tx;
-    if (action === "buy") tx = await r.swapExactETHForTokens(0, [DEX.wagent, token], w.address, dl(), { value: ethers.parseEther(amount), gasLimit: 300000 });
-    else { await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait(); tx = await r.swapExactTokensForETH(ethers.parseEther(amount), 0, [token, DEX.wagent], w.address, dl(), { gasLimit: 300000 }); }
+    if (action === "buy") { const a=[0,[DEX.wagent,token],w.address,dl()]; const o={value:ethers.parseEther(amount)}; const e=await r.swapExactETHForTokens.estimateGas(...a,o); tx = await r.swapExactETHForTokens(...a,{...o,gasLimit:(e*3n)/2n}); }
+    else { await (await new ethers.Contract(token, ERC20_ABI, w).approve(DEX.router, ethers.MaxUint256)).wait(); const a=[ethers.parseEther(amount),0,[token,DEX.wagent],w.address,dl()]; const e=await r.swapExactTokensForETH.estimateGas(...a); tx = await r.swapExactTokensForETH(...a,{gasLimit:(e*3n)/2n}); }
     await tx.wait();
     return out({ status: "swapped", action, token, amount, tx: tx.hash, explorer: `${EXPLORER}/tx/${tx.hash}` });
   });
