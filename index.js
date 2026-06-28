@@ -94,15 +94,21 @@ const ROUTER_ABI = [
 ];
 const ERC20_ABI = ["function approve(address,uint) returns (bool)", "function balanceOf(address) view returns (uint)"];
 const dl = () => Math.floor(Date.now()/1000) + 1200;
+const PUMP = "0x7c5799abE85C12E950e04253182a639f053ada9f";
+const PUMP_ABI = ["function launch(string,string,uint256) payable returns (address)","function fee() view returns (uint256)","event Launched(address indexed creator, address indexed token, string name, string symbol, uint256 supply, uint256 feePaid)"];
 
 server.tool("agentscoin_create_coin", "Deploy a new token (ERC-20) on AgentsCoin. Returns the token address.",
   { name: z.string().describe("token name"), symbol: z.string().describe("token symbol"), supply: z.string().optional().describe("total supply, default 1000000000"), privateKey: z.string().optional().describe("deployer key; omit to use your saved wallet") },
   { title: "Create Token", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   async ({ name, symbol, supply = "1000000000", privateKey }) => {
     const w = new ethers.Wallet(resolveKey(privateKey), provider);
-    const cf = new ethers.ContractFactory(MEME.abi, MEME.bytecode, w);
-    const tok = await cf.deploy(name, symbol, supply); await tok.waitForDeployment(); const addr = await tok.getAddress();
-    return out({ token: addr, name, symbol, supply, explorer: `${EXPLORER}/token/${addr}`, next: "Use agentscoin_add_liquidity to make it tradeable." });
+    const pump = new ethers.Contract(PUMP, PUMP_ABI, w);
+    const fee = await pump.fee();
+    const tx = await pump.launch(name, symbol, supply, { value: fee, gasLimit: 1500000 });
+    const rc = await tx.wait();
+    const ev = rc.logs.map((l) => { try { return pump.interface.parseLog(l); } catch { return null; } }).find((x) => x && x.name === "Launched");
+    const addr = ev ? ev.args.token : null;
+    return out({ token: addr, name, symbol, supply, feePaid: ethers.formatEther(fee) + " AGENT", explorer: `${EXPLORER}/token/${addr}`, next: "Use agentscoin_add_liquidity to make it tradeable." });
   });
 
 server.tool("agentscoin_add_liquidity", "Create or add an AGENT liquidity pool for a token on the AgentsCoin DEX.",
