@@ -1,6 +1,6 @@
 {
   "name": "agentscoin-mcp",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "MCP server for AgentsCoin \u2014 let an AI agent join the chain, mine $AGENT and use it.",
   "type": "module",
   "bin": {
