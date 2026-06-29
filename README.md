@@ -55,12 +55,12 @@ Once installed (the extension shows **Enabled · All requirements met**), just c
 
 **Mine** — *"Mine AGENT to 0x…"* runs the browser-PoW faucet headlessly. It needs Playwright + Chromium locally (`npm i playwright && npx playwright install chromium`). Easiest alternative: just claim from the web faucet.
 
-### The 8 tools
-`agentscoin_network_info` · `agentscoin_create_wallet` · `agentscoin_balance` · `agentscoin_send` · `agentscoin_mine` · `agentscoin_create_coin` · `agentscoin_add_liquidity` · `agentscoin_swap`
+### The 17 tools
+`agentscoin_network_info` · `agentscoin_create_wallet` · `agentscoin_balance` · `agentscoin_send` · `agentscoin_mine` · `agentscoin_create_coin` · `agentscoin_add_liquidity` · `agentscoin_swap` · `agentscoin_register_name` · `agentscoin_resolve_name` · `agentscoin_pay` · `agentscoin_price` · `agentscoin_weather` · `agentscoin_news` · `agentscoin_token_info` · `agentscoin_gas` · `agentscoin_reveal_private_key`
 
 ### Notes
 - **Gas first:** claim AGENT from the faucet before send / create / swap.
-- **Keys:** `create_wallet` returns the private key in plain text; you pass it back to Claude for actions that sign transactions.
+- **Keys:** `create_wallet` shows only the address. The private key is saved **hidden** in `~/.agentscoin/wallets.json` and used automatically to sign — call `agentscoin_reveal_private_key` only if you explicitly need it.
 - Network: **AgentsCoin** · chainId **24368** · explorer https://explorer.agents-coin.com · DEX https://dex.agents-coin.com
 
 ## What is AgentsCoin?
@@ -71,6 +71,8 @@ AgentsCoin is a public, **EVM-compatible Layer-1 blockchain** built for AI agent
 - ⛽ **Gas is paid in $AGENT** — near-free, forever. No ETH required.
 - 🎁 **80% of total supply** is distributed to agents through the faucet.
 - 🦊 **It's a normal EVM chain** — works with MetaMask and every EVM tool.
+- 🔗 **On Chainlist** — one-click add network: https://chainlist.org/?search=24368
+- ✅ **Verified contracts** — the token launcher + name service are verified on the explorer.
 
 | | |
 |---|---|
@@ -85,25 +87,34 @@ AgentsCoin is a public, **EVM-compatible Layer-1 blockchain** built for AI agent
 
 ## What is this MCP?
 
-[**MCP (Model Context Protocol)**](https://modelcontextprotocol.io) is the open standard that lets AI agents use external tools. This server gives your agent **5 tools** to use AgentsCoin.
+[**MCP (Model Context Protocol)**](https://modelcontextprotocol.io) is the open standard that lets AI agents use external tools. This server gives your agent **17 tools** to use AgentsCoin.
 
 | Tool | What it does |
 |------|--------------|
 | `agentscoin_network_info` | Returns chain params (to add the network to a wallet) |
 | `agentscoin_create_wallet` | Creates a new wallet (address + private key) |
 | `agentscoin_balance` | Checks an address' $AGENT balance |
-| `agentscoin_mine` | Mines $AGENT via the browser PoW faucet (headless) |
+| `agentscoin_mine` | Claims free $AGENT from the faucet (no browser needed) |
 | `agentscoin_send` | Sends $AGENT to another address |
 | `agentscoin_create_coin` | Deploys a new token (ERC-20) on AgentsCoin |
 | `agentscoin_add_liquidity` | Creates/adds an AGENT liquidity pool on the DEX |
 | `agentscoin_swap` | Buys/sells a token for AGENT on the DEX |
+| `agentscoin_register_name` | Registers a `.agent` name (identity); fee in AGENT |
+| `agentscoin_resolve_name` | Resolves a `.agent` name to its address |
+| `agentscoin_pay` | Pays another agent by `.agent` name |
+| `agentscoin_price` | Crypto price — pay-per-call (0.1 AGENT) |
+| `agentscoin_weather` | Weather — pay-per-call (0.1 AGENT) |
+| `agentscoin_news` | Top tech news — pay-per-call (0.1 AGENT) |
+| `agentscoin_token_info` | Token info — pay-per-call (0.1 AGENT) |
+| `agentscoin_gas` | Gas price — pay-per-call (0.1 AGENT) |
+| `agentscoin_reveal_private_key` | Reveals the saved wallet's key (only on request) |
 
 ---
 
 ## What happens when you give this to your agent
 
 1. **Your agent gets a wallet.** It calls `agentscoin_create_wallet` → a fresh address + private key. No signup, no human needed.
-2. **It mines $AGENT.** It calls `agentscoin_mine` → a headless browser runs the proof-of-work faucet (~1–2 min) and claims the reward to the wallet.
+2. **It gets $AGENT.** It calls `agentscoin_mine` → claims free $AGENT from the faucet instantly (no browser).
 3. **It uses the coin.** `agentscoin_balance` to check, `agentscoin_send` to pay anyone. Gas is paid in $AGENT — near-free.
 
 In short: **you paste one config, and your agent earns and spends its own on-chain money — autonomously. It costs you nothing.**
@@ -116,7 +127,7 @@ In short: **you paste one config, and your agent earns and spends its own on-cha
 git clone https://github.com/axiosdevs/agentscoin-mcp
 cd agentscoin-mcp
 npm install
-npx playwright install chromium   # only needed for the mine tool
+
 ```
 
 
@@ -152,12 +163,12 @@ Add to your `.mcp.json` (or `~/.claude.json`):
 }
 ```
 
-Restart your agent — the 5 tools appear.
+Restart your agent — the 17 tools appear.
 
 ## Typical flow
 
 ```
-create_wallet  →  mine  →  balance  →  send
+create_wallet  →  mine (faucet)  →  balance  →  send  →  pay  bob.agent
 ```
 
 ---
