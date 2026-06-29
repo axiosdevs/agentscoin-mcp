@@ -138,4 +138,84 @@ server.tool("agentscoin_swap", "Buy or sell a token for AGENT on the AgentsCoin 
     return out({ status: "swapped", action, token, amount, tx: tx.hash, explorer: `${EXPLORER}/tx/${tx.hash}` });
   });
 
+// --- Name Service + Premium data API ---
+const PREMIUM_WALLET = "0x7f2EaA14163Da03de045Bd27e766A16754A63a98";
+const ANS = "0x76BFF16FAF56F84118cE7efA37D378Ab5440B885";
+const ANS_ABI = ["function register(string,address) payable","function records(string) view returns (address)","function available(string) view returns (bool)","function fee() view returns (uint256)"];
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+server.tool("agentscoin_price", "Get a live crypto price (premium data API). Costs 0.1 AGENT per call, paid automatically from your saved wallet.",
+  { symbol: z.string().describe("token symbol, e.g. BTC, ETH, SOL"), privateKey: z.string().optional().describe("omit to use your saved wallet") },
+  { title: "Premium Price", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  async ({ symbol, privateKey }) => {
+    const w = new ethers.Wallet(resolveKey(privateKey), provider);
+    const tx = await w.sendTransaction({ to: PREMIUM_WALLET, value: ethers.parseEther("0.1") }); await tx.wait();
+    const sym = symbol.toUpperCase().replace("USDT", "");
+    const r = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=" + sym + "USDT"); const d = await r.json();
+    return out({ symbol: sym, priceUsd: d.price || null, paid: "0.1 AGENT", tx: tx.hash });
+  });
+
+server.tool("agentscoin_register_name", "Register a .agent name pointing to an address (costs 1 AGENT). Name: lowercase a-z 0-9 and -, 3-32 chars.",
+  { name: z.string().describe("the name without .agent, e.g. 'myagent'"), target: z.string().optional().describe("address it points to; defaults to your wallet"), privateKey: z.string().optional() },
+  { title: "Register .agent Name", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  async ({ name, target, privateKey }) => {
+    const w = new ethers.Wallet(resolveKey(privateKey), provider);
+    const c = new ethers.Contract(ANS, ANS_ABI, w); const fee = await c.fee(); const tgt = target || w.address;
+    const tx = await c.register(name.replace(/\.agent$/, ""), tgt, { value: fee, gasLimit: 300000 }); await tx.wait();
+    return out({ name: name.replace(/\.agent$/, "") + ".agent", target: tgt, paid: ethers.formatEther(fee) + " AGENT", tx: tx.hash });
+  });
+
+server.tool("agentscoin_resolve_name", "Resolve a .agent name to its address (free, read-only).",
+  { name: z.string().describe("e.g. 'myagent' or 'myagent.agent'") },
+  { title: "Resolve .agent Name", readOnlyHint: true, openWorldHint: true },
+  async ({ name }) => {
+    const c = new ethers.Contract(ANS, ANS_ABI, provider); const label = name.replace(/\.agent$/, "");
+    const addr = await c.records(label);
+    return out({ name: label + ".agent", address: addr === ZERO ? null : addr, available: addr === ZERO });
+  });
+
+server.tool("agentscoin_pay", "Pay AGENT to another agent by its .agent name (or a 0x address). Resolves the name, then sends. This is how agents pay each other.",
+  { to: z.string().describe("recipient: a .agent name like 'satoshi.agent' or a 0x address"), amount: z.string().describe("AGENT amount, e.g. '5'"), privateKey: z.string().optional() },
+  { title: "Pay Agent", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  async ({ to, amount, privateKey }) => {
+    const w = new ethers.Wallet(resolveKey(privateKey), provider);
+    let addr = to;
+    if (!ethers.isAddress(to)) {
+      const label = to.replace(/\.agent$/, "");
+      addr = await new ethers.Contract(ANS, ANS_ABI, provider).records(label);
+      if (!addr || addr === ZERO) return out({ error: `name "${to}" is not registered` });
+    }
+    const tx = await w.sendTransaction({ to: addr, value: ethers.parseEther(amount) }); await tx.wait();
+    return out({ status: "paid", to, resolved: addr, amount: amount + " AGENT", tx: tx.hash, explorer: `${EXPLORER}/tx/${tx.hash}` });
+  });
+
+server.tool("agentscoin_weather", "Get current weather for a city (premium data, Open-Meteo). Costs 0.1 AGENT.",
+  { city: z.string(), privateKey: z.string().optional() }, { title: "Weather", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  async ({ city, privateKey }) => { const w = new ethers.Wallet(resolveKey(privateKey), provider); const tx = await w.sendTransaction({ to: PREMIUM_WALLET, value: ethers.parseEther("0.1") }); await tx.wait();
+    const g = await (await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + encodeURIComponent(city))).json();
+    if (!g.results || !g.results[0]) return out({ error: "city not found", paid: "0.1 AGENT", tx: tx.hash });
+    const r = g.results[0]; const m = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${r.latitude}&longitude=${r.longitude}&current=temperature_2m,wind_speed_10m,weather_code`)).json();
+    return out({ city: r.name + ", " + r.country, current: m.current, paid: "0.1 AGENT", tx: tx.hash }); });
+
+server.tool("agentscoin_news", "Get top tech/startup news (premium data, Hacker News). Costs 0.1 AGENT.",
+  { query: z.string().optional(), privateKey: z.string().optional() }, { title: "News", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  async ({ query, privateKey }) => { const w = new ethers.Wallet(resolveKey(privateKey), provider); const tx = await w.sendTransaction({ to: PREMIUM_WALLET, value: ethers.parseEther("0.1") }); await tx.wait();
+    const url = query ? "https://hn.algolia.com/api/v1/search?tags=story&query=" + encodeURIComponent(query) : "https://hn.algolia.com/api/v1/search?tags=front_page";
+    const d = await (await fetch(url)).json(); const items = (d.hits || []).slice(0, 8).map(h => ({ title: h.title, url: h.url || ("https://news.ycombinator.com/item?id=" + h.objectID), points: h.points }));
+    return out({ news: items, paid: "0.1 AGENT", tx: tx.hash }); });
+
+server.tool("agentscoin_token_info", "Look up a crypto token price/liquidity (premium data, DexScreener). Costs 0.1 AGENT.",
+  { query: z.string().describe("symbol, name, or address"), privateKey: z.string().optional() }, { title: "Token Info", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  async ({ query, privateKey }) => { const w = new ethers.Wallet(resolveKey(privateKey), provider); const tx = await w.sendTransaction({ to: PREMIUM_WALLET, value: ethers.parseEther("0.1") }); await tx.wait();
+    const d = await (await fetch("https://api.dexscreener.com/latest/dex/search?q=" + encodeURIComponent(query))).json();
+    const p = (d.pairs || []).slice(0, 3).map(x => ({ pair: x.baseToken.symbol + "/" + x.quoteToken.symbol, chain: x.chainId, priceUsd: x.priceUsd, liquidityUsd: x.liquidity && x.liquidity.usd }));
+    return out({ results: p, paid: "0.1 AGENT", tx: tx.hash }); });
+
+server.tool("agentscoin_gas", "Get current gas price on Ethereum mainnet + AgentsCoin (premium data). Costs 0.1 AGENT.",
+  { privateKey: z.string().optional() }, { title: "Gas Price", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  async ({ privateKey }) => { const w = new ethers.Wallet(resolveKey(privateKey), provider); const tx = await w.sendTransaction({ to: PREMIUM_WALLET, value: ethers.parseEther("0.1") }); await tx.wait();
+    let ethGas = null; try { const e = new ethers.JsonRpcProvider("https://cloudflare-eth.com"); ethGas = ethers.formatUnits((await e.getFeeData()).gasPrice || 0n, "gwei") + " gwei"; } catch (x) {}
+    const ours = ethers.formatUnits((await provider.getFeeData()).gasPrice || 0n, "gwei") + " gwei";
+    return out({ ethereum: ethGas, agentscoin: ours, paid: "0.1 AGENT", tx: tx.hash }); });
+
 await server.connect(new StdioServerTransport());
