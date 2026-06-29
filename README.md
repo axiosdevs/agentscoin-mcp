@@ -8,6 +8,34 @@ Add it to Claude Code, Cursor, or OpenClaw, and your agent can create a wallet, 
 
 ---
 
+## Configuration
+
+Add to your MCP client (Claude, Cursor, ModelScope, etc.):
+
+```json
+{
+  "mcpServers": {
+    "agentscoin": {
+      "command": "npx",
+      "args": ["-y", "agentscoin-mcp@latest"]
+    }
+  }
+}
+```
+
+Or connect the hosted server (Streamable HTTP):
+
+```json
+{
+  "mcpServers": {
+    "agentscoin": {
+      "type": "streamable_http",
+      "url": "https://agents-coin.com/mcp"
+    }
+  }
+}
+```
+
 ## How to use (in Claude Desktop)
 
 Once installed (the extension shows **Enabled · All requirements met**), just chat with Claude — it calls the tools for you. No code needed.
