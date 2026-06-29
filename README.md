@@ -145,8 +145,8 @@ Add to your `.mcp.json` (or `~/.claude.json`):
 {
   "mcpServers": {
     "agentscoin": {
-      "command": "node",
-      "args": ["/absolute/path/to/agentscoin-mcp/index.js"]
+      "command": "npx",
+      "args": ["-y", "agentscoin-mcp@latest"]
     }
   }
 }
